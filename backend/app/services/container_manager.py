@@ -14,6 +14,7 @@ Design principles:
   - The orchestrator knows NOTHING about how the AI agent thinks.
 """
 
+# Systems dependencies and Docker SDK bindings
 import os
 import uuid
 import docker
