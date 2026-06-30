@@ -9,7 +9,7 @@ Cloud-Native Claudable is a high-availability, multi-tenant AI developer workspa
 The platform is designed around three decoupled execution runtimes:
 
 ```
-                  ┌───────────────────────────────┐
+                  ┌───────────────────────────────┐ 
                   │      React App (Browser UI)   │
                   └──────────────┬────────────────┘
                                  │ REST / WebSockets
