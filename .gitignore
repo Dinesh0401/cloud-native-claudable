@@ -1,0 +1,36 @@
+# Dependency directories
+node_modules/
+__pycache__/
+venv/
+.venv/
+dist/
+build/
+*.egg-info/
+
+# Next.js build and cache output
+.next/
+out/
+
+# Environment configurations (secrets)
+.env
+.env.local
+.env.*.local
+
+# Databases and cache
+*.db
+*.db-journal
+cc.db
+data/cc.db
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Testing and coverage
+coverage/
+.nyc_output/
+
+# Application runtime workspace directories (state)
+workspaces/
+data/projects/
+docker-test/workspace/
