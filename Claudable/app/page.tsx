@@ -28,6 +28,8 @@ const fetchAPI = globalThis.fetch || fetch;
 
 const API_BASE = process.env.NEXT_PUBLIC_API_BASE ?? '';
 
+import { useAuth } from '@/contexts/AuthContext';
+
 // Define assistant brand colors
 const ASSISTANT_OPTIONS = ACTIVE_CLI_OPTIONS.map(({ id, name, icon }) => ({
   id,
@@ -40,6 +42,15 @@ const assistantBrandColors = ACTIVE_CLI_BRAND_COLORS;
 const MODEL_OPTIONS_BY_ASSISTANT = ACTIVE_CLI_MODEL_OPTIONS;
 
 export default function HomePage() {
+  const { user, loading: authLoading } = useAuth();
+  const router = useRouter();
+
+  useEffect(() => {
+    if (!authLoading && !user) {
+      router.push('/login');
+    }
+  }, [user, authLoading, router]);
+
   const [projects, setProjects] = useState<ProjectSummary[]>([]);
   const [showCreate, setShowCreate] = useState(false);
   const [showGlobalSettings, setShowGlobalSettings] = useState(false);
@@ -160,7 +171,6 @@ export default function HomePage() {
   const [uploadedImages, setUploadedImages] = useState<{ id: string; name: string; url: string; path: string; file?: File }[]>([]);
   const [isUploading, setIsUploading] = useState(false);
   const [isDragOver, setIsDragOver] = useState(false);
-  const router = useRouter();
   const prefetchTimers = useRef<Map<string, NodeJS.Timeout>>(new Map());
   const fileInputRef = useRef<HTMLInputElement>(null);
   const assistantDropdownRef = useRef<HTMLDivElement>(null);

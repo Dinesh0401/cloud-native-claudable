@@ -9,6 +9,7 @@ import {
   updateProject,
   updateProjectActivity,
 } from '@/lib/services/project';
+import { createClient } from '@/lib/supabase/server';
 import { createMessage } from '@/lib/services/message';
 import { initializeNextJsProject as initializeClaudeProject, applyChanges as applyClaudeChanges } from '@/lib/services/cli/claude';
 import { initializeNextJsProject as initializeCodexProject, applyChanges as applyCodexChanges } from '@/lib/services/cli/codex';
@@ -231,6 +232,13 @@ async function normalizeImageAttachment(
  */
 export async function POST(request: NextRequest, { params }: RouteContext) {
   try {
+    const supabase = await createClient();
+    const { data: { user } } = await supabase.auth.getUser();
+
+    if (!user) {
+      return NextResponse.json({ success: false, error: 'Unauthorized' }, { status: 401 });
+    }
+
     const { project_id } = await params;
     const rawBody = await request.json().catch(() => ({}));
     const body = (rawBody && typeof rawBody === 'object' ? rawBody : {}) as ChatActRequest &
@@ -241,6 +249,13 @@ export async function POST(request: NextRequest, { params }: RouteContext) {
       return NextResponse.json(
         { success: false, error: 'Project not found' },
         { status: 404 },
+      );
+    }
+
+    if (project.userId !== user.id) {
+      return NextResponse.json(
+        { success: false, error: 'Forbidden' },
+        { status: 403 },
       );
     }
 

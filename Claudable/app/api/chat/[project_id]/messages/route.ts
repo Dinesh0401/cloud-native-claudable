@@ -12,6 +12,9 @@ interface RouteContext {
   params: Promise<{ project_id: string }>;
 }
 
+import { createClient } from '@/lib/supabase/server';
+import { getProjectById } from '@/lib/services/project';
+
 /**
  * GET /api/chat/[project_id]/messages
  * Get project message history
@@ -21,7 +24,21 @@ export async function GET(
   { params }: RouteContext
 ) {
   try {
+    const supabase = await createClient();
+    const { data: { user } } = await supabase.auth.getUser();
+
+    if (!user) {
+      return NextResponse.json({ success: false, error: 'Unauthorized' }, { status: 401 });
+    }
+
     const { project_id } = await params;
+    
+    // Check ownership
+    const project = await getProjectById(project_id);
+    if (!project || project.userId !== user.id) {
+      return NextResponse.json({ success: false, error: 'Forbidden' }, { status: 403 });
+    }
+
     const { searchParams } = new URL(request.url);
     const limit = parseInt(searchParams.get('limit') || '50');
     const offset = parseInt(searchParams.get('offset') || '0');
@@ -67,7 +84,21 @@ export async function POST(
   { params }: RouteContext
 ) {
   try {
+    const supabase = await createClient();
+    const { data: { user } } = await supabase.auth.getUser();
+
+    if (!user) {
+      return NextResponse.json({ success: false, error: 'Unauthorized' }, { status: 401 });
+    }
+
     const { project_id } = await params;
+    
+    // Check ownership
+    const project = await getProjectById(project_id);
+    if (!project || project.userId !== user.id) {
+      return NextResponse.json({ success: false, error: 'Forbidden' }, { status: 403 });
+    }
+    
     const payload = await request.json();
 
     const content =
@@ -148,7 +179,21 @@ export async function DELETE(
   { params }: RouteContext
 ) {
   try {
+    const supabase = await createClient();
+    const { data: { user } } = await supabase.auth.getUser();
+
+    if (!user) {
+      return NextResponse.json({ success: false, error: 'Unauthorized' }, { status: 401 });
+    }
+
     const { project_id } = await params;
+    
+    // Check ownership
+    const project = await getProjectById(project_id);
+    if (!project || project.userId !== user.id) {
+      return NextResponse.json({ success: false, error: 'Forbidden' }, { status: 403 });
+    }
+    
     const { searchParams } = new URL(request.url);
     const conversationId =
       searchParams.get('conversationId') ?? searchParams.get('conversation_id') ?? undefined;

@@ -16,6 +16,7 @@ datasource db {
 
 model Project {
   id          String   @id @default(cuid())
+  userId      String   @map("user_id")
   name        String
   description String?
   status      String   @default("idle") // idle, running, stopped, error
@@ -57,12 +58,14 @@ model Project {
   toolUsages            ToolUsage[]
   userRequests          UserRequest[]
 
+  @@index([userId])
   @@map("projects")
 }
 
 model Message {
   id        String   @id @default(cuid())
   projectId String   @map("project_id")
+  userId    String   @map("user_id")
 
   // Message content
   role         String // user, assistant, system, tool
@@ -100,6 +103,7 @@ model Message {
   toolUsages ToolUsage[]
 
   @@index([projectId])
+  @@index([userId])
   @@index([sessionId])
   @@index([createdAt])
   @@index([cliSource])
@@ -110,6 +114,7 @@ model Message {
 model Session {
   id          String   @id @default(cuid())
   projectId   String   @map("project_id")
+  userId      String   @map("user_id")
 
   // Session info
   sessionType String   @map("session_type") // chat, code_gen, error_fix
@@ -132,6 +137,7 @@ model Session {
   messages Message[]
 
   @@index([projectId])
+  @@index([userId])
   @@index([cliType])
   @@map("sessions")
 }

@@ -11,13 +11,22 @@ import { serializeProjects, serializeProject } from '@/lib/serializers/project';
 import { getDefaultModelForCli, normalizeModelId } from '@/lib/constants/cliModels';
 import { createSuccessResponse, createErrorResponse, handleApiError } from '@/lib/utils/api-response';
 
+import { createClient } from '@/lib/supabase/server';
+
 /**
  * GET /api/projects
- * Get all projects list
+ * Get all projects list for the authenticated user
  */
-export async function GET() {
+export async function GET(request: NextRequest) {
   try {
-    const projects = await getAllProjects();
+    const supabase = await createClient();
+    const { data: { user } } = await supabase.auth.getUser();
+
+    if (!user) {
+      return createErrorResponse('Unauthorized', undefined, 401);
+    }
+
+    const projects = await getAllProjects(user.id);
     return createSuccessResponse(serializeProjects(projects));
   } catch (error) {
     return handleApiError(error, 'API', 'Failed to fetch projects');
@@ -30,12 +39,20 @@ export async function GET() {
  */
 export async function POST(request: NextRequest) {
   try {
+    const supabase = await createClient();
+    const { data: { user } } = await supabase.auth.getUser();
+
+    if (!user) {
+      return createErrorResponse('Unauthorized', undefined, 401);
+    }
+
     const body = await request.json();
     const preferredCli = String(body.preferredCli || body.preferred_cli || 'claude').toLowerCase();
     const requestedModel = body.selectedModel || body.selected_model;
 
-    const input: CreateProjectInput = {
+    const input: CreateProjectInput & { userId: string } = {
       project_id: body.project_id,
+      userId: user.id,
       name: body.name,
       initialPrompt: body.initialPrompt || body.initial_prompt,
       preferredCli,

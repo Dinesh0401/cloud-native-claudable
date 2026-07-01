@@ -11,8 +11,9 @@ import {
   updateProject,
   deleteProject,
 } from '@/lib/services/project';
-import type { UpdateProjectInput } from '@/types/backend';
 import { serializeProject } from '@/lib/serializers/project';
+import { createClient } from '@/lib/supabase/server';
+import type { UpdateProjectInput } from '@/types/backend';
 
 interface RouteContext {
   params: Promise<{ project_id: string }>;
@@ -27,6 +28,13 @@ export async function GET(
   { params }: RouteContext
 ) {
   try {
+    const supabase = await createClient();
+    const { data: { user } } = await supabase.auth.getUser();
+
+    if (!user) {
+      return NextResponse.json({ success: false, error: 'Unauthorized' }, { status: 401 });
+    }
+
     const { project_id } = await params;
     const project = await getProjectById(project_id);
 
@@ -34,6 +42,13 @@ export async function GET(
       return NextResponse.json(
         { success: false, error: 'Project not found' },
         { status: 404 }
+      );
+    }
+
+    if (project.userId !== user.id) {
+      return NextResponse.json(
+        { success: false, error: 'Forbidden' },
+        { status: 403 }
       );
     }
 
@@ -60,7 +75,24 @@ export async function PUT(
   { params }: RouteContext
 ) {
   try {
+    const supabase = await createClient();
+    const { data: { user } } = await supabase.auth.getUser();
+
+    if (!user) {
+      return NextResponse.json({ success: false, error: 'Unauthorized' }, { status: 401 });
+    }
+
     const { project_id } = await params;
+    const existingProject = await getProjectById(project_id);
+    
+    if (!existingProject) {
+      return NextResponse.json({ success: false, error: 'Project not found' }, { status: 404 });
+    }
+    
+    if (existingProject.userId !== user.id) {
+      return NextResponse.json({ success: false, error: 'Forbidden' }, { status: 403 });
+    }
+
     const body = await request.json();
 
     const input: UpdateProjectInput = {
@@ -115,7 +147,24 @@ export async function DELETE(
   { params }: RouteContext
 ) {
   try {
+    const supabase = await createClient();
+    const { data: { user } } = await supabase.auth.getUser();
+
+    if (!user) {
+      return NextResponse.json({ success: false, error: 'Unauthorized' }, { status: 401 });
+    }
+
     const { project_id } = await params;
+    const existingProject = await getProjectById(project_id);
+    
+    if (!existingProject) {
+      return NextResponse.json({ success: false, error: 'Project not found' }, { status: 404 });
+    }
+    
+    if (existingProject.userId !== user.id) {
+      return NextResponse.json({ success: false, error: 'Forbidden' }, { status: 403 });
+    }
+
     await deleteProject(project_id);
 
     return NextResponse.json({

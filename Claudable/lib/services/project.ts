@@ -14,10 +14,11 @@ const PROJECTS_DIR_ABSOLUTE = path.isAbsolute(PROJECTS_DIR)
   : path.resolve(process.cwd(), PROJECTS_DIR);
 
 /**
- * Retrieve all projects
+ * Retrieve all projects for a specific user
  */
-export async function getAllProjects(): Promise<Project[]> {
+export async function getAllProjects(userId: string): Promise<Project[]> {
   const projects = await prisma.project.findMany({
+    where: { userId },
     orderBy: {
       lastActiveAt: 'desc',
     },
@@ -45,7 +46,7 @@ export async function getProjectById(id: string): Promise<Project | null> {
 /**
  * Create new project
  */
-export async function createProject(input: CreateProjectInput): Promise<Project> {
+export async function createProject(input: CreateProjectInput & { userId: string }): Promise<Project> {
   // Create project directory
   const projectPath = path.join(PROJECTS_DIR_ABSOLUTE, input.project_id);
   await fs.mkdir(projectPath, { recursive: true });
@@ -54,6 +55,7 @@ export async function createProject(input: CreateProjectInput): Promise<Project>
   const project = await prisma.project.create({
     data: {
       id: input.project_id,
+      userId: input.userId,
       name: input.name,
       description: input.description,
       initialPrompt: input.initialPrompt,
