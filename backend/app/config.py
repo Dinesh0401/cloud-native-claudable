@@ -11,8 +11,13 @@ load_dotenv()
 
 # Load environment variables from Next.js .env as fallback/shared config
 nextjs_env = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))), "Claudable", ".env")
+nextjs_env_local = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))), "Claudable", ".env.local")
 if os.path.exists(nextjs_env):
     load_dotenv(nextjs_env)
+if os.path.exists(nextjs_env_local):
+    load_dotenv(nextjs_env_local)
+
+SUPABASE_JWT_SECRET = os.environ.get("SUPABASE_JWT_SECRET", "")
 
 
 # Where project workspaces live on the host filesystem (mapping to Next.js data/projects)
