@@ -41,9 +41,9 @@ class ContainerManager:
                 self.client = docker.from_env()
 
 
-        # In-memory session registry: {session_id: container_id}
-        # Day 2 only — no database needed.
-        self._sessions: dict[str, str] = {}
+        # In-memory session registry: {session_id: dict}
+        # Day 3 — storing container_id and workspace path.
+        self._sessions: dict[str, dict] = {}
 
         # Ensure workspace root exists
         os.makedirs(self.workspace_root, exist_ok=True)
@@ -52,16 +52,16 @@ class ContainerManager:
     # Session lifecycle
     # ------------------------------------------------------------------
 
-    def create_session(self, project_id: str) -> dict:
+    def create_session(self, project_id: str, user_id: str) -> dict:
         """
         Create a new agent session:
           1. Use the provided project_id as the session ID
-          2. Mount the existing Next.js workspace directory
+          2. Mount the existing Next.js workspace directory for the specific user
           3. Launch a Docker container with the workspace mounted
           4. Register the session
         """
         session_id = project_id
-        workspace_path = os.path.join(self.workspace_root, session_id)
+        workspace_path = os.path.join(self.workspace_root, user_id, session_id)
         os.makedirs(workspace_path, exist_ok=True)
 
         # Launch container
@@ -82,8 +82,11 @@ class ContainerManager:
             working_dir="/workspace",
         )
 
-        self._sessions[session_id] = container.id
-        print(f"[ContainerManager] Session created: {session_id} -> container {container.short_id}")
+        self._sessions[session_id] = {
+            "container_id": container.id,
+            "workspace": workspace_path
+        }
+        print(f"[ContainerManager] Session created: {session_id} -> container {container.short_id} in {workspace_path}")
 
         return {
             "session_id": session_id,
@@ -104,9 +107,11 @@ class ContainerManager:
           --ephemeral                               → no session persistence
           -C /workspace                             → working directory
         """
-        container_id = self._sessions.get(session_id)
-        if not container_id:
+        session_info = self._sessions.get(session_id)
+        if not session_info:
             raise ValueError(f"Session not found: {session_id}")
+        
+        container_id = session_info["container_id"]
 
         container = self.client.containers.get(container_id)
 
@@ -146,9 +151,12 @@ class ContainerManager:
         Stop and remove the container for a session.
         The workspace directory remains on the host filesystem.
         """
-        container_id = self._sessions.get(session_id)
-        if not container_id:
+        session_info = self._sessions.get(session_id)
+        if not session_info:
             raise ValueError(f"Session not found: {session_id}")
+
+        container_id = session_info["container_id"]
+        workspace_path = session_info["workspace"]
 
         try:
             container = self.client.containers.get(container_id)
@@ -162,7 +170,6 @@ class ContainerManager:
 
         del self._sessions[session_id]
 
-        workspace_path = os.path.join(self.workspace_root, session_id)
         files = os.listdir(workspace_path) if os.path.exists(workspace_path) else []
 
         return {
@@ -174,13 +181,15 @@ class ContainerManager:
 
     def get_session_status(self, session_id: str) -> dict | None:
         """Get the current status of a session."""
-        container_id = self._sessions.get(session_id)
-        if not container_id:
+        session_info = self._sessions.get(session_id)
+        if not session_info:
             return None
+            
+        container_id = session_info["container_id"]
+        workspace_path = session_info["workspace"]
 
         try:
             container = self.client.containers.get(container_id)
-            workspace_path = os.path.join(self.workspace_root, session_id)
             files = os.listdir(workspace_path) if os.path.exists(workspace_path) else []
             return {
                 "session_id": session_id,

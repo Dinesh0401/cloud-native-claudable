@@ -8,15 +8,40 @@ Endpoints:
   GET  /sessions/{session_id}     → get session status
   POST /sessions/{session_id}/exec → run agent command, stream stdout
   DELETE /sessions/{session_id}   → stop and remove container
+  GET  /projects/{project_id}/download → zip and download a project
 """
 
-from fastapi import FastAPI, HTTPException
+import jwt
+from fastapi import FastAPI, Request, BackgroundTasks, HTTPException, Depends
+from fastapi.responses import JSONResponse, StreamingResponse, FileResponse
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
+import os
+import shutil
+import tempfile
+from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 
 from app.services.container_manager import ContainerManager
 from app import config
+
+security = HTTPBearer()
+
+def verify_token(credentials: HTTPAuthorizationCredentials = Depends(security)):
+    if not config.SUPABASE_JWT_SECRET:
+        # If no secret configured, skip auth (for dev)
+        return {"sub": "dev_user"}
+        
+    try:
+        token = credentials.credentials
+        payload = jwt.decode(
+            token, 
+            config.SUPABASE_JWT_SECRET, 
+            algorithms=["HS256"], 
+            audience="authenticated"
+        )
+        return payload
+    except Exception as e:
+        raise HTTPException(status_code=401, detail=f"Invalid authentication credentials: {str(e)}")
 
 # ---------------------------------------------------------------------------
 # App
@@ -60,17 +85,20 @@ class CreateSessionRequest(BaseModel):
     project_id: str
 
 @app.post("/sessions")
-def create_session(body: CreateSessionRequest):
+def create_session(body: CreateSessionRequest, token: dict = Depends(verify_token)):
     """Create a new agent session — launches a Docker container with a mounted workspace."""
     try:
-        session = manager.create_session(project_id=body.project_id)
+        user_id = token.get("sub")
+        if not user_id:
+            raise HTTPException(status_code=401, detail="User ID not found in token")
+        session = manager.create_session(project_id=body.project_id, user_id=user_id)
         return session
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
 
 @app.get("/sessions/{session_id}")
-def get_session(session_id: str):
+def get_session(session_id: str, token: dict = Depends(verify_token)):
     """Get the status of a session."""
     status = manager.get_session_status(session_id)
     if status is None:
@@ -79,7 +107,7 @@ def get_session(session_id: str):
 
 
 @app.post("/sessions/{session_id}/exec")
-def exec_command(session_id: str, body: ExecRequest):
+def exec_command(session_id: str, body: ExecRequest, token: dict = Depends(verify_token)):
     """
     Execute an agent command inside the session container.
     Streams stdout back as text/plain in real-time.
@@ -96,10 +124,33 @@ def exec_command(session_id: str, body: ExecRequest):
 
 
 @app.delete("/sessions/{session_id}")
-def delete_session(session_id: str):
+def delete_session(session_id: str, token: dict = Depends(verify_token)):
     """Stop and remove the session container. Workspace files persist on the host."""
     try:
         result = manager.stop_session(session_id)
         return result
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/projects/{project_id}/download")
+def download_project(project_id: str, token: dict = Depends(verify_token)):
+    """Zip the project workspace and return it for download."""
+    user_id = token.get("sub")
+    if not user_id:
+        raise HTTPException(status_code=401, detail="User ID not found in token")
+        
+    workspace_path = os.path.join(manager.workspace_root, user_id, project_id)
+    if not os.path.exists(workspace_path):
+        raise HTTPException(status_code=404, detail="Project not found")
+
+    temp_dir = tempfile.mkdtemp()
+    zip_path = os.path.join(temp_dir, f"{project_id}.zip")
+    
+    # Create a zip archive of the directory
+    shutil.make_archive(zip_path[:-4], 'zip', workspace_path)
+
+    return FileResponse(
+        zip_path,
+        media_type="application/zip",
+        filename=f"{project_id}.zip"
+    )
