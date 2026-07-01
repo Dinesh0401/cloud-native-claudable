@@ -4,13 +4,14 @@ import { AnimatePresence } from 'framer-motion';
 import { MotionDiv, MotionH3, MotionP, MotionButton } from '@/lib/motion';
 import { useRouter, useSearchParams, useParams } from 'next/navigation';
 import dynamic from 'next/dynamic';
-import { FaCode, FaDesktop, FaMobileAlt, FaPlay, FaStop, FaSync, FaCog, FaRocket, FaFolder, FaFolderOpen, FaFile, FaFileCode, FaCss3Alt, FaHtml5, FaJs, FaReact, FaPython, FaDocker, FaGitAlt, FaMarkdown, FaDatabase, FaPhp, FaJava, FaRust, FaVuejs, FaLock, FaHome, FaChevronUp, FaChevronRight, FaChevronDown, FaArrowLeft, FaArrowRight, FaRedo } from 'react-icons/fa';
+import { FaCode, FaDesktop, FaMobileAlt, FaPlay, FaStop, FaSync, FaCog, FaRocket, FaFolder, FaFolderOpen, FaFile, FaFileCode, FaCss3Alt, FaHtml5, FaJs, FaReact, FaPython, FaDocker, FaGitAlt, FaMarkdown, FaDatabase, FaPhp, FaJava, FaRust, FaVuejs, FaLock, FaHome, FaChevronUp, FaChevronRight, FaChevronDown, FaArrowLeft, FaArrowRight, FaRedo, FaDownload } from 'react-icons/fa';
 import { SiTypescript, SiGo, SiRuby, SiSvelte, SiJson, SiYaml, SiCplusplus } from 'react-icons/si';
 import { VscJson } from 'react-icons/vsc';
 import ChatLog from '@/components/chat/ChatLog';
 import { ProjectSettings } from '@/components/settings/ProjectSettings';
 import ChatInput from '@/components/chat/ChatInput';
 import { ChatErrorBoundary } from '@/components/ErrorBoundary';
+import { useAuth } from '@/components/auth/AuthContext';
 import { useUserRequests } from '@/hooks/useUserRequests';
 import { useGlobalSettings } from '@/contexts/GlobalSettingsContext';
 import { getDefaultModelForCli, getModelDisplayName } from '@/lib/constants/cliModels';
@@ -193,6 +194,7 @@ export default function ChatPage() {
   const projectId = params?.project_id ?? '';
   const router = useRouter();
   const searchParams = useSearchParams();
+  const { session } = useAuth();
   
   // NEW: UserRequests state management
   const {
@@ -794,6 +796,35 @@ const persistProjectPreferences = useCallback(
       setTimeout(() => setIsStartingPreview(false), 2000);
     }
   }, [projectId]);
+
+  const downloadProject = async () => {
+    try {
+      if (!session) return;
+      
+      const response = await fetch(`${API_BASE}/projects/${projectId}/download`, {
+        headers: {
+          'Authorization': `Bearer ${session.access_token}`
+        }
+      });
+      
+      if (!response.ok) {
+        throw new Error('Failed to download project');
+      }
+      
+      const blob = await response.blob();
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.style.display = 'none';
+      a.href = url;
+      a.download = `${projectId}.zip`;
+      document.body.appendChild(a);
+      a.click();
+      window.URL.revokeObjectURL(url);
+    } catch (error) {
+      console.error('Failed to download project:', error);
+      alert('Failed to download project');
+    }
+  };
 
   // Navigate to specific route in iframe
   const navigateToRoute = (route: string) => {
@@ -2439,6 +2470,15 @@ const persistProjectPreferences = useCallback(
                 </div>
                 
                 <div className="flex items-center gap-2">
+                  {/* Download Button */}
+                  <button 
+                    onClick={downloadProject}
+                    className="h-9 w-9 flex items-center justify-center bg-gray-100 text-gray-600 hover:text-gray-900 hover:bg-gray-200 rounded-lg transition-colors"
+                    title="Download Project"
+                  >
+                    <FaDownload size={14} />
+                  </button>
+                  
                   {/* Settings Button */}
                   <button 
                     onClick={() => setShowGlobalSettings(true)}
