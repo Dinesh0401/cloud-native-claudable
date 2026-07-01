@@ -28,7 +28,18 @@ class ContainerManager:
         self.image = image
         self.workspace_root = os.path.abspath(workspace_root)
         self.api_key = api_key
-        self.client = docker.from_env()
+        try:
+            self.client = docker.from_env()
+            self.client.ping()
+        except Exception:
+            try:
+                # Fallback for Windows Docker Desktop Linux context endpoint
+                self.client = docker.DockerClient(base_url="npipe:////./pipe/dockerDesktopLinuxEngine")
+                self.client.ping()
+            except Exception:
+                # Default back to from_env if both fail to raise original or standard errors
+                self.client = docker.from_env()
+
 
         # In-memory session registry: {session_id: container_id}
         # Day 2 only — no database needed.
@@ -103,15 +114,14 @@ class ContainerManager:
         # (This bypasses 401 OpenAI API key issues for testing infrastructure)
         if prompt.startswith("mock:") or prompt.startswith("bash:"):
             command_to_run = prompt.split(":", 1)[1].strip()
+            if "<current_project_context>" in command_to_run:
+                command_to_run = command_to_run.split("<current_project_context>")[0].strip()
             cmd = ["bash", "-c", command_to_run]
         else:
             cmd = [
-                "codex", "exec",
-                "--json",
-                "--dangerously-bypass-approvals-and-sandbox",
-                "--skip-git-repo-check",
-                "--ephemeral",
-                "-C", "/workspace",
+                "bash",
+                "-c",
+                'codex exec --json --dangerously-bypass-approvals-and-sandbox --skip-git-repo-check --ephemeral -C /workspace "$0" < /dev/null',
                 prompt,
             ]
 
