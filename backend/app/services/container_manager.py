@@ -41,15 +41,15 @@ class ContainerManager:
     # Session lifecycle
     # ------------------------------------------------------------------
 
-    def create_session(self) -> dict:
+    def create_session(self, project_id: str) -> dict:
         """
         Create a new agent session:
-          1. Generate a unique session ID
-          2. Create a workspace directory on the host
+          1. Use the provided project_id as the session ID
+          2. Mount the existing Next.js workspace directory
           3. Launch a Docker container with the workspace mounted
           4. Register the session
         """
-        session_id = f"session-{uuid.uuid4().hex[:12]}"
+        session_id = project_id
         workspace_path = os.path.join(self.workspace_root, session_id)
         os.makedirs(workspace_path, exist_ok=True)
 

@@ -5,10 +5,10 @@ Reads from environment variables with sensible defaults.
 
 import os
 
-# Where project workspaces live on the host filesystem
+# Where project workspaces live on the host filesystem (mapping to Next.js data/projects)
 WORKSPACE_ROOT = os.environ.get(
     "WORKSPACE_ROOT",
-    os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))), "workspaces"),
+    os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))), "Claudable", "data", "projects"),
 )
 
 # Docker image name for the agent runtime container

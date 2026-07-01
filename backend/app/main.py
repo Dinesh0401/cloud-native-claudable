@@ -56,11 +56,14 @@ def health():
     return {"status": "ok", "service": "claudable-orchestrator"}
 
 
+class CreateSessionRequest(BaseModel):
+    project_id: str
+
 @app.post("/sessions")
-def create_session():
+def create_session(body: CreateSessionRequest):
     """Create a new agent session — launches a Docker container with a mounted workspace."""
     try:
-        session = manager.create_session()
+        session = manager.create_session(project_id=body.project_id)
         return session
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
