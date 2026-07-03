@@ -340,6 +340,7 @@ export async function POST(request: NextRequest, { params }: RouteContext) {
 
     const userMessage = await createMessage({
       projectId: project_id,
+      userId: user.id,
       role: 'user',
       messageType: 'chat',
       content: finalInstruction,

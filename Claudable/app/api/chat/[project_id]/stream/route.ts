@@ -44,7 +44,7 @@ export async function GET(
         console.error('[SSE] Failed to send welcome message:', error);
       }
 
-      // Heartbeat (every 30 seconds)
+      // Heartbeat (every 10 seconds to prevent Vercel 15s timeout)
       const heartbeatInterval = setInterval(() => {
         try {
           const heartbeat = `data: ${JSON.stringify({
@@ -58,7 +58,7 @@ export async function GET(
           console.error('[SSE] Failed to send heartbeat:', error);
           clearInterval(heartbeatInterval);
         }
-      }, 30000);
+      }, 10000);
 
       // Cleanup on connection close
       request.signal.addEventListener('abort', () => {

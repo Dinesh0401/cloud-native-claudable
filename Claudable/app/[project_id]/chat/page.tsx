@@ -4,14 +4,15 @@ import { AnimatePresence } from 'framer-motion';
 import { MotionDiv, MotionH3, MotionP, MotionButton } from '@/lib/motion';
 import { useRouter, useSearchParams, useParams } from 'next/navigation';
 import dynamic from 'next/dynamic';
-import { FaCode, FaDesktop, FaMobileAlt, FaPlay, FaStop, FaSync, FaCog, FaRocket, FaFolder, FaFolderOpen, FaFile, FaFileCode, FaCss3Alt, FaHtml5, FaJs, FaReact, FaPython, FaDocker, FaGitAlt, FaMarkdown, FaDatabase, FaPhp, FaJava, FaRust, FaVuejs, FaLock, FaHome, FaChevronUp, FaChevronRight, FaChevronDown, FaArrowLeft, FaArrowRight, FaRedo, FaDownload } from 'react-icons/fa';
+import { FaCode, FaDesktop, FaMobileAlt, FaPlay, FaStop, FaSync, FaCog, FaRocket, FaFolder, FaFolderOpen, FaFile, FaFileCode, FaCss3Alt, FaHtml5, FaJs, FaReact, FaPython, FaDocker, FaGitAlt, FaMarkdown, FaDatabase, FaPhp, FaJava, FaRust, FaVuejs, FaLock, FaHome, FaChevronUp, FaChevronRight, FaChevronDown, FaArrowLeft, FaArrowRight, FaRedo } from 'react-icons/fa';
+import { FiDownload } from 'react-icons/fi';
 import { SiTypescript, SiGo, SiRuby, SiSvelte, SiJson, SiYaml, SiCplusplus } from 'react-icons/si';
 import { VscJson } from 'react-icons/vsc';
 import ChatLog from '@/components/chat/ChatLog';
 import { ProjectSettings } from '@/components/settings/ProjectSettings';
 import ChatInput from '@/components/chat/ChatInput';
 import { ChatErrorBoundary } from '@/components/ErrorBoundary';
-import { useAuth } from '@/components/auth/AuthContext';
+import { useAuth } from '@/contexts/AuthContext';
 import { useUserRequests } from '@/hooks/useUserRequests';
 import { useGlobalSettings } from '@/contexts/GlobalSettingsContext';
 import { getDefaultModelForCli, getModelDisplayName } from '@/lib/constants/cliModels';
@@ -2100,17 +2101,14 @@ const persistProjectPreferences = useCallback(
   const previousActiveState = useRef(false);
   
   useEffect(() => {
-    if (!hasActiveRequests && !previewUrl && !isStartingPreview) {
-      if (!previousActiveState.current) {
-        console.log('🔄 Preview not running; auto-starting');
-      } else {
-        console.log('✅ Task completed, ensuring preview server is running');
-      }
+    // Start preview immediately if not already starting/running, 
+    // even while the AI is actively generating code (hasActiveRequests is true)
+    // so the user can see live hot-reloading.
+    if (!previewUrl && !isStartingPreview) {
+      console.log('🔄 Preview not running; auto-starting immediately to show live updates');
       start();
     }
-
-    previousActiveState.current = hasActiveRequests;
-  }, [hasActiveRequests, previewUrl, isStartingPreview, start]);
+  }, [previewUrl, isStartingPreview, start]);
 
   // Poll for file changes in code view
   useEffect(() => {
@@ -2315,13 +2313,13 @@ const persistProjectPreferences = useCallback(
                   onSessionStatusChange={(isRunningValue) => {
                   console.log('🔍 [DEBUG] Session status change:', isRunningValue);
                   setIsRunning(isRunningValue);
-                  // Track agent task completion and auto-start preview
-                  if (!isRunningValue && hasInitialPrompt && !agentWorkComplete && !previewUrl) {
+                  // Track agent task completion
+                  if (!isRunningValue && hasInitialPrompt && !agentWorkComplete) {
                     setAgentWorkComplete(true);
                     // Save to localStorage
                     localStorage.setItem(`project_${projectId}_taskComplete`, 'true');
-                    // Auto-start preview server after initial prompt task completion
-                    start();
+                    // Note: Preview auto-starts immediately now via useEffect, 
+                    // so we don't need to wait for the task to complete to call start() here.
                   }
                 }}
                 onSseFallbackActive={(active) => {
@@ -2476,7 +2474,7 @@ const persistProjectPreferences = useCallback(
                     className="h-9 w-9 flex items-center justify-center bg-gray-100 text-gray-600 hover:text-gray-900 hover:bg-gray-200 rounded-lg transition-colors"
                     title="Download Project"
                   >
-                    <FaDownload size={14} />
+                    <FiDownload size={14} />
                   </button>
                   
                   {/* Settings Button */}

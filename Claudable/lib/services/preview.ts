@@ -721,198 +721,49 @@ class PreviewManager {
       );
       await scaffoldBasicNextApp(projectPath, projectId);
     }
-
-    const previewBounds = resolvePreviewBounds();
-    const preferredPort = await findAvailablePort(
-      previewBounds.start,
-      previewBounds.end
-    );
-
-    const initialUrl = `http://localhost:${preferredPort}`;
-
-    const env: NodeJS.ProcessEnv = {
-      ...process.env,
-      PORT: String(preferredPort),
-      WEB_PORT: String(preferredPort),
-      NEXT_PUBLIC_APP_URL: initialUrl,
-    };
-
+    
     const previewProcess: PreviewProcess = {
       process: null,
-      port: preferredPort,
-      url: initialUrl,
+      port: 0,
+      url: '',
       status: 'starting',
       logs: [],
       startedAt: new Date(),
     };
 
-    const log = this.getLogger(previewProcess);
-    const flushPendingLogs = () => {
-      if (pendingLogs.length === 0) {
-        return;
+    // Call FastAPI backend to start the preview server inside the container
+    try {
+      console.log(`[PreviewManager] Calling backend to start preview for ${projectId}...`);
+      const res = await fetch(`http://localhost:8000/sessions/${projectId}/preview/start`, {
+        method: 'POST'
+      });
+      
+      if (!res.ok) {
+        throw new Error(`Backend failed to start preview: ${await res.text()}`);
       }
-      const entries = pendingLogs.splice(0);
-      entries.forEach((entry) => log(Buffer.from(entry)));
-    };
-    flushPendingLogs();
-
-    // Ensure dependencies with the same per-project lock used by installDependencies
-    const ensureWithLock = async () => {
-      // If node_modules exists, skip
-      if (await directoryExists(path.join(projectPath, 'node_modules'))) {
-        return;
-      }
-      const existing = this.installing.get(projectId);
-      if (existing) {
-        log(Buffer.from('[PreviewManager] Dependency installation already in progress; waiting...'));
-        await existing;
-        return;
-      }
-      const installPromise = (async () => {
-        try {
-          // Double-check just before install
-          if (!(await directoryExists(path.join(projectPath, 'node_modules')))) {
-            await runInstallWithPreferredManager(projectPath, env, log);
-          }
-        } finally {
-          this.installing.delete(projectId);
-        }
-      })();
-      this.installing.set(projectId, installPromise);
-      await installPromise;
-    };
-
-    await ensureWithLock();
-
-    const packageJson = await readPackageJson(projectPath);
-    const hasPredev = Boolean(packageJson?.scripts?.predev);
-
-    if (hasPredev) {
-      await appendCommandLogs(npmCommand, ['run', 'predev'], projectPath, env, log);
-    }
-
-    const overrides = await collectEnvOverrides(projectPath);
-
-    if (overrides.port) {
-      if (
-        overrides.port < previewBounds.start ||
-        overrides.port > previewBounds.end
-      ) {
-        queueLog(
-          `Ignoring project-specified port ${overrides.port} because it falls outside the allowed preview range ${previewBounds.start}-${previewBounds.end}.`
-        );
-        delete overrides.port;
-      }
-    }
-
-    if (overrides.url) {
-      try {
-        const parsed = new URL(overrides.url);
-        if (parsed.port) {
-          const parsedPort = parsePort(parsed.port);
-          if (
-            parsedPort &&
-            (parsedPort < previewBounds.start ||
-              parsedPort > previewBounds.end)
-          ) {
-            queueLog(
-              `Ignoring project-specified NEXT_PUBLIC_APP_URL (${overrides.url}) because port ${parsed.port} is outside the allowed preview range ${previewBounds.start}-${previewBounds.end}.`
-            );
-            delete overrides.url;
-          }
-        }
-      } catch {
-        queueLog(
-          `Ignoring project-specified NEXT_PUBLIC_APP_URL (${overrides.url}) because it could not be parsed as a valid URL.`
-        );
-        delete overrides.url;
-      }
-    }
-
-    flushPendingLogs();
-
-    if (overrides.port && overrides.port !== previewProcess.port) {
-      previewProcess.port = overrides.port;
-      env.PORT = String(overrides.port);
-      env.WEB_PORT = String(overrides.port);
-      log(
-        Buffer.from(
-          `[PreviewManager] Detected project-specified port ${overrides.port}.`
-        )
-      );
-    }
-
-    const effectivePort = previewProcess.port;
-    let resolvedUrl: string = `http://localhost:${effectivePort}`;
-    if (typeof overrides.url === 'string' && overrides.url.trim().length > 0) {
-      resolvedUrl = overrides.url.trim();
-    }
-
-    env.NEXT_PUBLIC_APP_URL = resolvedUrl;
-    previewProcess.url = resolvedUrl;
-
-    const child = spawn(
-      npmCommand,
-      ['run', 'dev', '--', '--port', String(effectivePort)],
-      {
-        cwd: projectPath,
-        env,
-        shell: process.platform === 'win32',
-        stdio: ['ignore', 'pipe', 'pipe'],
-      }
-    );
-
-    previewProcess.process = child;
-    this.processes.set(projectId, previewProcess);
-
-    child.stdout?.on('data', (chunk) => {
-      log(chunk);
-      if (previewProcess.status === 'starting') {
-        previewProcess.status = 'running';
-      }
-    });
-
-    child.stderr?.on('data', (chunk) => {
-      log(chunk);
-    });
-
-    child.on('exit', (code, signal) => {
-      previewProcess.status = code === 0 ? 'stopped' : 'error';
-      this.processes.delete(projectId);
+      
+      const data = await res.json();
+      
+      previewProcess.port = data.preview_port;
+      previewProcess.url = data.preview_url;
+      previewProcess.status = 'running';
+      
+      this.processes.set(projectId, previewProcess);
+      
       updateProject(projectId, {
-        previewUrl: null,
-        previewPort: null,
+        previewUrl: data.preview_url,
+        previewPort: data.preview_port,
       }).catch((error) => {
-        console.error('[PreviewManager] Failed to reset project preview:', error);
+        console.error('[PreviewManager] Failed to update project preview:', error);
       });
-      updateProjectStatus(projectId, 'idle').catch((error) => {
-        console.error('[PreviewManager] Failed to reset project status:', error);
-      });
-      log(
-        Buffer.from(
-          `Preview process exited (code: ${code ?? 'null'}, signal: ${
-            signal ?? 'null'
-          })`
-        )
-      );
-    });
-
-    child.on('error', (error) => {
+      
+      return this.toInfo(previewProcess);
+    } catch (e) {
+      console.error(`[PreviewManager] Error starting container preview:`, e);
       previewProcess.status = 'error';
-      log(Buffer.from(`Preview process failed: ${error.message}`));
-    });
-
-    await waitForPreviewReady(previewProcess.url, log).catch(() => {
-      // wait function already logged; ignore errors
-    });
-
-    await updateProject(projectId, {
-      previewUrl: previewProcess.url,
-      previewPort: previewProcess.port,
-      status: 'running',
-    });
-
-    return this.toInfo(previewProcess);
+      this.processes.delete(projectId);
+      throw e;
+    }
   }
 
   public async stop(projectId: string): Promise<PreviewInfo> {
@@ -935,9 +786,12 @@ class PreviewManager {
     }
 
     try {
-      processInfo.process?.kill('SIGTERM');
-    } catch (error) {
-      console.error('[PreviewManager] Failed to stop preview process:', error);
+      console.log(`[PreviewManager] Calling backend to stop preview for ${projectId}...`);
+      await fetch(`http://localhost:8000/sessions/${projectId}/preview/stop`, {
+        method: 'POST'
+      });
+    } catch (e) {
+      console.error(`[PreviewManager] Failed to stop container preview for ${projectId}:`, e);
     }
 
     this.processes.delete(projectId);

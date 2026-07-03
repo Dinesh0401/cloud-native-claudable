@@ -145,6 +145,7 @@ export async function POST(
 
     const input: CreateMessageInput = {
       projectId: project_id,
+      userId: user.id,
       role,
       messageType,
       content,

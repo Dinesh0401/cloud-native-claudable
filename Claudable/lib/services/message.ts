@@ -77,6 +77,7 @@ export async function createMessage(input: CreateMessageInput): Promise<Message>
         data: {
           ...(input.id ? { id: input.id } : {}),
           projectId: input.projectId,
+          userId: input.userId,
           role: input.role,
           messageType: input.messageType,
           content: input.content,

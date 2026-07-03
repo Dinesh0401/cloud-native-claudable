@@ -1,37 +1,47 @@
 """
 Backend configuration.
-Reads from environment variables with sensible defaults.
+Uses pydantic-settings to validate environment variables.
 """
 
 import os
-from dotenv import load_dotenv
+from pydantic_settings import BaseSettings, SettingsConfigDict
 
-# Load environment variables from backend/ .env if exists
-load_dotenv()
+class Settings(BaseSettings):
+    # Security / Auth
+    supabase_jwt_secret: str = ""
 
-# Load environment variables from Next.js .env as fallback/shared config
-nextjs_env = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))), "Claudable", ".env")
-nextjs_env_local = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))), "Claudable", ".env.local")
-if os.path.exists(nextjs_env):
-    load_dotenv(nextjs_env)
-if os.path.exists(nextjs_env_local):
-    load_dotenv(nextjs_env_local)
+    # Workspace
+    workspace_root: str = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))), "Claudable", "data", "projects")
 
-SUPABASE_JWT_SECRET = os.environ.get("SUPABASE_JWT_SECRET", "")
+    # Docker
+    agent_image: str = "agent-runtime"
 
+    # API Keys
+    openai_api_key: str = ""
 
-# Where project workspaces live on the host filesystem (mapping to Next.js data/projects)
-WORKSPACE_ROOT = os.environ.get(
-    "WORKSPACE_ROOT",
-    os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))), "Claudable", "data", "projects"),
-)
+    # FastAPI server config
+    host: str = "0.0.0.0"
+    port: int = 8000
 
-# Docker image name for the agent runtime container
-AGENT_IMAGE = os.environ.get("AGENT_IMAGE", "agent-runtime")
+    # Pydantic settings config to load from .env files
+    model_config = SettingsConfigDict(
+        env_file=(
+            os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))), "Claudable", ".env"),
+            os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))), "Claudable", ".env.local"),
+            ".env"
+        ),
+        env_file_encoding='utf-8',
+        extra='ignore',
+        env_prefix=""
+    )
 
-# OpenAI API key — required for Codex CLI inside containers
-OPENAI_API_KEY = os.environ.get("OPENAI_API_KEY", "")
+settings = Settings()
 
-# FastAPI server
-HOST = os.environ.get("HOST", "0.0.0.0")
-PORT = int(os.environ.get("PORT", "8000"))
+# Alias legacy config variables to avoid breaking existing imports immediately
+SUPABASE_JWT_SECRET = settings.supabase_jwt_secret
+WORKSPACE_ROOT = settings.workspace_root
+AGENT_IMAGE = settings.agent_image
+OPENAI_API_KEY = settings.openai_api_key
+HOST = settings.host
+PORT = settings.port
+

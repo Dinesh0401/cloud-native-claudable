@@ -1,0 +1,25 @@
+version: '3.8'
+
+services:
+  backend:
+    build: .
+    image: claudable-backend:latest
+    container_name: claudable-backend
+    restart: always
+    ports:
+      - "8000:8000"
+    environment:
+      - PORT=8000
+      - HOST=0.0.0.0
+      - SUPABASE_URL=${SUPABASE_URL}
+      - SUPABASE_SERVICE_ROLE_KEY=${SUPABASE_SERVICE_ROLE_KEY}
+      - SUPABASE_JWT_SECRET=${SUPABASE_JWT_SECRET}
+      - ENVIRONMENT=production
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - ../data/projects:/app/data/projects
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"

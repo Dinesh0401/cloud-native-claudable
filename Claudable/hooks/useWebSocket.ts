@@ -1,12 +1,12 @@
 /**
- * WebSocket Hook
- * Manages WebSocket connection for real-time updates
+ * Stream Hook (Formerly WebSocket)
+ * Manages SSE connection for real-time updates for Vercel deployment compatibility
  */
 import { useEffect, useRef, useCallback, useState } from 'react';
 import { WEBSOCKET_CONFIG } from '@/lib/config/constants';
 import type { ChatMessage, RealtimeEvent, RealtimeStatus } from '@/types';
 
-interface WebSocketOptions {
+interface StreamOptions {
   projectId: string;
   onMessage?: (message: ChatMessage) => void;
   onStatus?: (status: string, data?: RealtimeStatus | Record<string, unknown>, requestId?: string) => void;
@@ -22,15 +22,15 @@ export function useWebSocket({
   onConnect,
   onDisconnect,
   onError
-}: WebSocketOptions) {
-  const wsRef = useRef<WebSocket | null>(null);
+}: StreamOptions) {
+  const eventSourceRef = useRef<EventSource | null>(null);
   const reconnectTimeoutRef = useRef<NodeJS.Timeout | null>(null);
-  const heartbeatIntervalRef = useRef<NodeJS.Timeout | null>(null);
   const connectionAttemptsRef = useRef(0);
   const shouldReconnectRef = useRef(true);
   const manualCloseRef = useRef(false);
   const [isConnected, setIsConnected] = useState(false);
   const [isConnecting, setIsConnecting] = useState(false);
+  
   const handlersRef = useRef({
     onMessage,
     onStatus,
@@ -49,290 +49,176 @@ export function useWebSocket({
     };
   }, [onMessage, onStatus, onConnect, onDisconnect, onError]);
 
-  const clearHeartbeat = useCallback(() => {
-    if (heartbeatIntervalRef.current) {
-      clearInterval(heartbeatIntervalRef.current);
-      heartbeatIntervalRef.current = null;
-    }
-  }, []);
-
-  const startHeartbeat = useCallback(() => {
-    clearHeartbeat();
-    heartbeatIntervalRef.current = setInterval(() => {
-      const socket = wsRef.current;
-      if (!socket || socket.readyState !== WebSocket.OPEN) {
-        return;
-      }
-      try {
-        socket.send('ping');
-      } catch (error) {
-        console.error('Failed to send WebSocket ping:', error);
-      }
-    }, 25000);
-  }, [clearHeartbeat]);
-
   const connect = useCallback(() => {
-    const existing = wsRef.current;
+    const existing = eventSourceRef.current;
     if (existing) {
       if (
-        existing.readyState === WebSocket.OPEN ||
-        existing.readyState === WebSocket.CONNECTING
+        existing.readyState === EventSource.OPEN ||
+        existing.readyState === EventSource.CONNECTING
       ) {
         return;
       }
-
       try {
-        existing.close(1000, 'Reconnecting');
-      } catch {
-        // Ignore close errors; we'll replace the socket below.
-      }
-      wsRef.current = null;
+        existing.close();
+      } catch {}
+      eventSourceRef.current = null;
     }
 
-    // Don't reconnect if we're intentionally disconnecting
     if (!shouldReconnectRef.current) {
       return;
     }
 
-    const resolveWebSocketUrl = () => {
-      const rawBase = process.env.NEXT_PUBLIC_WS_BASE?.trim() ?? '';
-      const endpoint = `/api/ws/${projectId}`;
-      if (rawBase.length > 0) {
-        const normalizedBase = rawBase.replace(/\/+$/, '');
-        return `${normalizedBase}${endpoint}`;
-      }
-      if (typeof window !== 'undefined') {
-        const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-        return `${protocol}//${window.location.host}${endpoint}`;
-      }
-      throw new Error('WebSocket base URL is not available');
+    setIsConnecting(true);
+    const endpoint = `/api/chat/${projectId}/stream`;
+    const es = new EventSource(endpoint);
+    manualCloseRef.current = false;
+    let openStabilizeTimeout: NodeJS.Timeout;
+
+    es.onopen = () => {
+      setIsConnected(true);
+      setIsConnecting(false);
+      openStabilizeTimeout = setTimeout(() => {
+        connectionAttemptsRef.current = 0;
+      }, 2000);
+      handlersRef.current.onConnect?.();
     };
 
-    const resolveHttpWarmupUrl = () => {
-      const rawBase = process.env.NEXT_PUBLIC_WS_BASE?.trim() ?? '';
-      const endpoint = `/api/ws/${projectId}`;
-      if (rawBase.length > 0) {
-        // Convert ws/wss to http/https for the warm-up fetch
-        const normalizedBase = rawBase
-          .replace(/\/+$/, '')
-          .replace(/^ws:\/\//i, 'http://')
-          .replace(/^wss:\/\//i, 'https://');
-        return `${normalizedBase}${endpoint}`;
-      }
-      if (typeof window !== 'undefined') {
-        const httpProto = window.location.protocol === 'https:' ? 'https:' : 'http:';
-        return `${httpProto}//${window.location.host}${endpoint}`;
-      }
-      throw new Error('HTTP base URL is not available');
-    };
-
-    const openWebSocket = () => {
-      setIsConnecting(true);
-      const ws = new WebSocket(resolveWebSocketUrl());
-      manualCloseRef.current = false;
-
-      let openStabilizeTimeout: NodeJS.Timeout;
-
-      ws.onopen = () => {
-        setIsConnected(true);
-        setIsConnecting(false);
-        
-        // Don't reset attempts immediately. Wait for the connection to prove stable.
-        // If it closes immediately, attempts won't reset, allowing exponential backoff to work.
-        openStabilizeTimeout = setTimeout(() => {
-          connectionAttemptsRef.current = 0;
-        }, 2000);
-        
-        startHeartbeat();
-        handlersRef.current.onConnect?.();
-      };
-
-      ws.onmessage = (event) => {
-        if (event.data === 'pong') {
-          return;
-        }
-
-        try {
-          const envelope = JSON.parse(event.data) as RealtimeEvent;
-          const { onMessage: handleMessage, onStatus: handleStatus, onError: handleError } =
-            handlersRef.current;
-
-          switch (envelope.type) {
-            case 'message':
-              if (envelope.data && handleMessage) {
-                handleMessage(envelope.data);
-              }
-              break;
-            case 'status':
-              if (envelope.data && handleStatus) {
-                handleStatus(envelope.data.status, envelope.data, envelope.data.requestId);
-              }
-              break;
-            case 'error': {
-              const message = envelope.error ?? 'Realtime bridge error';
-              const rawData = envelope.data as Record<string, unknown> | undefined;
-              const requestId = (() => {
-                if (!rawData) return undefined;
-                const direct = rawData.requestId ?? rawData.request_id;
-                return typeof direct === 'string' ? direct : undefined;
-              })();
-              const payload: RealtimeStatus = {
-                status: 'error',
-                message,
-                ...(requestId ? { requestId } : {}),
-              };
-              handleStatus?.('error', payload, requestId);
-              handleError?.(new Error(message));
-              break;
-            }
-            case 'connected':
-              if (handleStatus) {
-                const payload: RealtimeStatus = {
-                  status: 'connected',
-                  message: 'Realtime channel connected',
-                  sessionId: envelope.data.sessionId,
-                };
-                handleStatus('connected', payload, envelope.data.sessionId);
-              }
-              break;
-            case 'preview_error':
-            case 'preview_success':
-              if (handleStatus) {
-                const payload: RealtimeStatus = {
-                  status: envelope.type,
-                  message: envelope.data?.message,
-                  metadata: envelope.data?.severity
-                    ? { severity: envelope.data.severity }
-                    : undefined,
-                };
-                handleStatus(envelope.type, payload);
-              }
-              break;
-            case 'heartbeat':
-              break;
-            default: {
-              const fallback = envelope as unknown as { type: string };
-              handleStatus?.(fallback.type, envelope as unknown as Record<string, unknown>);
-              break;
-            }
-          }
-        } catch (error) {
-          console.error('Failed to parse WebSocket message:', error);
-        }
-      };
-
-      ws.onerror = (error) => {
-        if (openStabilizeTimeout) clearTimeout(openStabilizeTimeout);
-        if (manualCloseRef.current) {
-          setIsConnecting(false);
-          return;
-        }
-        console.warn('❌ WebSocket error:', error);
-        console.warn('❌ WebSocket readyState:', ws.readyState);
-        console.warn('❌ WebSocket URL:', ws.url);
-        clearHeartbeat();
-        setIsConnecting(false);
-        handlersRef.current.onError?.(new Error(`WebSocket connection error to ${ws.url}`));
-      };
-
-      ws.onclose = () => {
-        if (openStabilizeTimeout) clearTimeout(openStabilizeTimeout);
-        setIsConnected(false);
-        setIsConnecting(false);
-        clearHeartbeat();
-        handlersRef.current.onDisconnect?.();
-        
-        // Only reconnect if we should
-        if (shouldReconnectRef.current) {
-          const attempts = connectionAttemptsRef.current + 1;
-          connectionAttemptsRef.current = attempts;
-
-          // After max attempts, continue with longer delays
-          let delay: number;
-          if (attempts > WEBSOCKET_CONFIG.MAX_RECONNECT_ATTEMPTS) {
-            // After max attempts, keep trying every 30-60 seconds
-            const longDelay = 30000 + Math.random() * 30000; // 30-60s
-            delay = longDelay;
-            console.warn(`[WebSocket] Max reconnection attempts reached, retrying every 30-60s (attempt ${attempts})`);
-          } else {
-            // Exponential backoff with jitter for initial attempts
-            const exponentialDelay = Math.min(
-              WEBSOCKET_CONFIG.BASE_RECONNECT_DELAY * Math.pow(2, attempts - 1),
-              WEBSOCKET_CONFIG.MAX_RECONNECT_DELAY
-            );
-            const jitter = Math.random() * 1000; // Add 0-1s jitter
-            delay = exponentialDelay + jitter;
-            console.log(`[WebSocket] Reconnecting in ${Math.round(delay)}ms (attempt ${attempts}/${WEBSOCKET_CONFIG.MAX_RECONNECT_ATTEMPTS})`);
-          }
-
-          reconnectTimeoutRef.current = setTimeout(() => {
-            connect();
-          }, delay);
-        }
-      };
-
-      wsRef.current = ws;
-    };
-
-    // Warm up the API route to ensure server-side WS upgrade handler is attached
-    (async () => {
+    es.onmessage = (event) => {
       try {
-        const warmupUrl = resolveHttpWarmupUrl();
-        await fetch(warmupUrl, { method: 'GET', headers: { 'x-ws-warmup': '1' } });
-        // Wait a bit for the upgrade handler to be fully attached
-        await new Promise(resolve => setTimeout(resolve, 100));
-      } catch {
-        // Warm-up is best-effort; proceed regardless
-      } finally {
-        try {
-          openWebSocket();
-        } catch (error) {
-          setIsConnecting(false);
-          console.error('Failed to create WebSocket connection:', error);
-          handlersRef.current.onError?.(error as Error);
+        const envelope = JSON.parse(event.data) as RealtimeEvent;
+        const { onMessage: handleMessage, onStatus: handleStatus, onError: handleError } =
+          handlersRef.current;
+
+        switch (envelope.type) {
+          case 'message':
+            if (envelope.data && handleMessage) {
+              handleMessage(envelope.data);
+            }
+            break;
+          case 'status':
+            if (envelope.data && handleStatus) {
+              handleStatus(envelope.data.status, envelope.data, envelope.data.requestId);
+            }
+            break;
+          case 'error': {
+            const message = envelope.error ?? 'Realtime stream error';
+            const rawData = envelope.data as Record<string, unknown> | undefined;
+            const requestId = rawData?.requestId ?? rawData?.request_id;
+            const payload: RealtimeStatus = {
+              status: 'error',
+              message,
+              ...(typeof requestId === 'string' ? { requestId } : {}),
+            };
+            handleStatus?.('error', payload, typeof requestId === 'string' ? requestId : undefined);
+            handleError?.(new Error(message));
+            break;
+          }
+          case 'connected':
+            if (handleStatus) {
+              const payload: RealtimeStatus = {
+                status: 'connected',
+                message: 'Realtime channel connected',
+                sessionId: envelope.data.sessionId,
+              };
+              handleStatus('connected', payload, envelope.data.sessionId);
+            }
+            break;
+          case 'preview_error':
+          case 'preview_success':
+            if (handleStatus) {
+              const payload: RealtimeStatus = {
+                status: envelope.type,
+                message: envelope.data?.message,
+                metadata: envelope.data?.severity
+                  ? { severity: envelope.data.severity }
+                  : undefined,
+              };
+              handleStatus(envelope.type, payload);
+            }
+            break;
+          case 'heartbeat':
+            // Handled automatically by EventSource keeping connection alive
+            break;
+          default: {
+            const fallback = envelope as unknown as { type: string };
+            handleStatus?.(fallback.type, envelope as unknown as Record<string, unknown>);
+            break;
+          }
         }
+      } catch (error) {
+        console.error('Failed to parse SSE message:', error);
       }
-    })();
-  }, [projectId, startHeartbeat, clearHeartbeat]);
+    };
+
+    es.onerror = (error) => {
+      if (openStabilizeTimeout) clearTimeout(openStabilizeTimeout);
+      if (manualCloseRef.current) {
+        setIsConnecting(false);
+        return;
+      }
+      
+      console.warn('❌ SSE stream error');
+      setIsConnecting(false);
+      setIsConnected(false);
+      es.close();
+      eventSourceRef.current = null;
+      handlersRef.current.onError?.(new Error(`SSE connection error to ${endpoint}`));
+      handlersRef.current.onDisconnect?.();
+
+      if (shouldReconnectRef.current) {
+        const attempts = connectionAttemptsRef.current + 1;
+        connectionAttemptsRef.current = attempts;
+
+        let delay: number;
+        if (attempts > WEBSOCKET_CONFIG.MAX_RECONNECT_ATTEMPTS) {
+          const longDelay = 30000 + Math.random() * 30000;
+          delay = longDelay;
+          console.warn(`[Stream] Max reconnection attempts reached, retrying every 30-60s (attempt ${attempts})`);
+        } else {
+          const exponentialDelay = Math.min(
+            WEBSOCKET_CONFIG.BASE_RECONNECT_DELAY * Math.pow(2, attempts - 1),
+            WEBSOCKET_CONFIG.MAX_RECONNECT_DELAY
+          );
+          delay = exponentialDelay + Math.random() * 1000;
+          console.log(`[Stream] Reconnecting in ${Math.round(delay)}ms (attempt ${attempts})`);
+        }
+
+        reconnectTimeoutRef.current = setTimeout(() => {
+          connect();
+        }, delay);
+      }
+    };
+
+    eventSourceRef.current = es;
+  }, [projectId]);
 
   const disconnect = useCallback(() => {
     shouldReconnectRef.current = false;
     manualCloseRef.current = true;
-    clearHeartbeat();
     setIsConnecting(false);
     
     if (reconnectTimeoutRef.current) {
       clearTimeout(reconnectTimeoutRef.current);
     }
     
-    if (wsRef.current) {
-      const socket = wsRef.current;
-      wsRef.current = null;
-
-      if (socket.readyState === WebSocket.CONNECTING) {
-        socket.addEventListener('open', () => {
-          socket.close(1000, 'Client disconnect');
-        });
-      } else {
-        socket.close(1000, 'Client disconnect');
-      }
+    if (eventSourceRef.current) {
+      eventSourceRef.current.close();
+      eventSourceRef.current = null;
     }
     
     setIsConnected(false);
-  }, [clearHeartbeat]);
+  }, []);
 
   const sendMessage = useCallback((data: any) => {
-    if (wsRef.current?.readyState === WebSocket.OPEN) {
-      wsRef.current.send(JSON.stringify(data));
-    } else {
-      console.warn('WebSocket is not connected');
-    }
+    // SSE is unidirectional (server -> client).
+    // Client -> server is handled via REST APIs (e.g. POST /api/chat/.../act)
+    console.warn('sendMessage is not supported via SSE. Use REST endpoints instead.');
   }, []);
 
   const manualReconnect = useCallback(() => {
-    console.log('[WebSocket] Manual reconnect triggered');
+    console.log('[Stream] Manual reconnect triggered');
     shouldReconnectRef.current = true;
-    connectionAttemptsRef.current = 0; // Reset attempt counter
+    connectionAttemptsRef.current = 0;
     disconnect();
     setTimeout(() => connect(), 100);
   }, [disconnect, connect]);

@@ -222,40 +222,27 @@ export default function CreateProjectModal({ open, onClose, onCreated, onOpenGlo
   const selectedCLIOption = enabledCLIs.find(cli => cli.id === selectedCLI);
   const selectedModelOption = selectedCLIOption?.models.find(model => model.id === selectedModel);
 
-  // WebSocket connection for project initialization
+  // SSE connection for project initialization (was WebSocket, migrated for Vercel compatibility)
   const connectToProjectWebSocket = (projectId: string) => {
     let reconnectAttempts = 0;
     const maxReconnectAttempts = 5;
     let reconnectTimeout: NodeJS.Timeout | null = null;
-    let socket: WebSocket | null = null;
-
-    const resolveWebSocketUrl = () => {
-      const base = process.env.NEXT_PUBLIC_WS_BASE?.trim() ?? '';
-      const endpoint = `/api/ws/${projectId}`;
-      if (base.length > 0) {
-        return `${base.replace(/\/+$/, '')}${endpoint}`;
-      }
-      if (typeof window !== 'undefined') {
-        const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-        return `${protocol}//${window.location.host}${endpoint}`;
-      }
-      throw new Error('Unable to resolve WebSocket URL');
-    };
+    let eventSource: EventSource | null = null;
 
     const connect = () => {
       try {
-        socket = new WebSocket(resolveWebSocketUrl());
+        eventSource = new EventSource(`/api/chat/${projectId}/stream`);
       } catch (error) {
-        console.error('Failed to initialize project WebSocket:', error);
-        socket = null;
+        console.error('Failed to initialize project SSE stream:', error);
+        eventSource = null;
         return;
       }
 
-      socket.onopen = () => {
+      eventSource.onopen = () => {
         reconnectAttempts = 0;
       };
 
-      socket.onmessage = (event) => {
+      eventSource.onmessage = (event) => {
         try {
           const data = JSON.parse(event.data);
 
@@ -269,37 +256,35 @@ export default function CreateProjectModal({ open, onClose, onCreated, onOpenGlo
 
             if (status === 'active') {
               setTimeout(() => {
-                socket?.close();
+                eventSource?.close();
                 handleInitializationComplete(projectId);
               }, 1000);
             } else if (status === 'failed') {
               setInitializationStep('Project initialization failed');
               setTimeout(() => {
-                socket?.close();
+                eventSource?.close();
                 setShowInitialization(false);
                 setInitializingProjectId(null);
               }, 3000);
             }
           }
         } catch (error) {
-          console.error('Failed to parse WebSocket message:', error);
+          console.error('Failed to parse SSE message:', error);
         }
       };
 
-      socket.onclose = (event) => {
-        if (event.code !== 1000 && reconnectAttempts < maxReconnectAttempts) {
+      eventSource.onerror = () => {
+        eventSource?.close();
+        eventSource = null;
+        if (reconnectAttempts < maxReconnectAttempts) {
           reconnectAttempts += 1;
           const delay = Math.min(1000 * Math.pow(2, reconnectAttempts - 1), 10000);
-          console.log(`🔄 Attempting to reconnect in ${delay}ms (attempt ${reconnectAttempts}/${maxReconnectAttempts})`);
+          console.log(`🔄 Attempting to reconnect SSE in ${delay}ms (attempt ${reconnectAttempts}/${maxReconnectAttempts})`);
           reconnectTimeout = setTimeout(connect, delay);
-        } else if (reconnectAttempts >= maxReconnectAttempts) {
+        } else {
           console.error('❌ Max reconnection attempts reached. Please refresh the page.');
           setInitializationStep('Connection lost. Please refresh the page.');
         }
-      };
-
-      socket.onerror = (error) => {
-        console.error('❌ Initialization WebSocket error:', error);
       };
     };
 
@@ -309,8 +294,8 @@ export default function CreateProjectModal({ open, onClose, onCreated, onOpenGlo
       if (reconnectTimeout) {
         clearTimeout(reconnectTimeout);
       }
-      if (socket && (socket.readyState === WebSocket.OPEN || socket.readyState === WebSocket.CONNECTING)) {
-        socket.close(1000, 'Component unmounting');
+      if (eventSource) {
+        eventSource.close();
       }
     };
   };

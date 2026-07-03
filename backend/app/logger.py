@@ -1,0 +1,28 @@
+"""
+Centralized structured logging setup.
+"""
+import logging
+import sys
+
+def get_logger(name: str):
+    logger = logging.getLogger(name)
+    
+    # Only configure if not already configured
+    if not logger.handlers:
+        logger.setLevel(logging.INFO)
+        
+        # Create console handler with formatting
+        console_handler = logging.StreamHandler(sys.stdout)
+        console_handler.setLevel(logging.INFO)
+        
+        # Structured log format: [timestamp] [level] [name] message
+        formatter = logging.Formatter(
+            '%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+        )
+        console_handler.setFormatter(formatter)
+        
+        logger.addHandler(console_handler)
+        
+    return logger
+
+logger = get_logger("claudable_backend")
