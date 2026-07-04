@@ -8,6 +8,7 @@ export type TemplateType = 'nextjs' | 'react' | 'vue' | 'custom';
 
 export interface Project {
   id: string;
+  userId: string;
   name: string;
   description?: string;
   status: ProjectStatus;

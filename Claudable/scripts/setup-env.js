@@ -188,11 +188,15 @@ async function ensureEnvironment(options = {}) {
   ensureDirectory(rootDataDir);
   ensureDirectory(projectsDir);
   ensureDirectory(prismaDataDir);
-  ensureFile(sqlitePath);
 
   const envDefaults = {};
   if (!hasEnvKey(envContents, 'DATABASE_URL')) {
-    envDefaults.DATABASE_URL = '"file:../data/cc.db"';
+    envDefaults.DATABASE_URL = '"postgresql://postgres:postgres@localhost:5432/claudable?schema=public"';
+    console.warn('\n⚠️  [Setup] DATABASE_URL is not configured. A placeholder PostgreSQL connection URL has been added.');
+    console.warn('⚠️  Please configure DATABASE_URL and DIRECT_URL in your .env / .env.local files to connect to your PostgreSQL database (e.g., Supabase).\n');
+  }
+  if (!hasEnvKey(envContents, 'DIRECT_URL')) {
+    envDefaults.DIRECT_URL = '"postgresql://postgres:postgres@localhost:5432/claudable?schema=public"';
   }
   if (!hasEnvKey(envContents, 'PROJECTS_DIR')) {
     envDefaults.PROJECTS_DIR = '"./data/projects"';

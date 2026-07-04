@@ -65,7 +65,7 @@ export interface ChatActRequest {
 export interface CreateMessageInput {
   id?: string;
   projectId: string;
-  userId: string;
+  userId?: string;
   role: 'assistant' | 'user' | 'system' | 'tool';
   messageType: 'chat' | 'tool_use' | 'tool_result' | 'error' | 'info' | 'system';
   content: string;

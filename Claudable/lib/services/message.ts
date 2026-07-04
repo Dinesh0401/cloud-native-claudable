@@ -52,6 +52,16 @@ export async function getMessagesByProjectId(
  * Create new message
  */
 export async function createMessage(input: CreateMessageInput): Promise<Message> {
+  // Resolve userId if not provided in input
+  let userId = input.userId;
+  if (!userId) {
+    const project = await prisma.project.findUnique({
+      where: { id: input.projectId },
+      select: { userId: true },
+    });
+    userId = project?.userId || 'dev_user';
+  }
+
   const metadataJson = input.metadata ? JSON.stringify(input.metadata) : undefined;
   const metadataLength = metadataJson ? metadataJson.length : 0;
   const metadataPreview =
@@ -77,7 +87,7 @@ export async function createMessage(input: CreateMessageInput): Promise<Message>
         data: {
           ...(input.id ? { id: input.id } : {}),
           projectId: input.projectId,
-          userId: input.userId,
+          userId: userId,
           role: input.role,
           messageType: input.messageType,
           content: input.content,

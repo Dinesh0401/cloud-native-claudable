@@ -104,13 +104,12 @@ async function ensureDatabaseSynced() {
   }
 
   try {
-    const tables = await prisma.$queryRaw`SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'projects'`;
-    if (!Array.isArray(tables) || tables.length === 0) {
-      await runPrismaDbPush();
-    }
+    // Database-agnostic validation check (works on both SQLite and PostgreSQL).
+    // If the projects table does not exist, it will throw an error and trigger initialization.
+    await prisma.$queryRaw`SELECT 1 FROM "projects" LIMIT 1`;
   } catch (error) {
     console.warn(
-      '⚠️  Prisma schema check failed, attempting to sync automatically:',
+      'ℹ️  Prisma schema check query failed, running schema synchronization (db push):',
       error instanceof Error ? error.message : error
     );
     await runPrismaDbPush();

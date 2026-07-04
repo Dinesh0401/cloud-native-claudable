@@ -20,6 +20,7 @@ export interface ServiceConnection {
 
 export interface Project {
   id: string;
+  userId?: string;
   name: string;
   description?: string | null;
   status?: ProjectStatus;
