@@ -733,8 +733,9 @@ class PreviewManager {
 
     // Call FastAPI backend to start the preview server inside the container
     try {
-      console.log(`[PreviewManager] Calling backend to start preview for ${projectId}...`);
-      const res = await fetch(`http://localhost:8000/sessions/${projectId}/preview/start`, {
+      const backendUrl = process.env.BACKEND_API_URL || 'http://localhost:8000';
+      console.log(`[PreviewManager] Calling backend to start preview for ${projectId} at ${backendUrl}...`);
+      const res = await fetch(`${backendUrl}/sessions/${projectId}/preview/start`, {
         method: 'POST'
       });
       
@@ -786,8 +787,9 @@ class PreviewManager {
     }
 
     try {
-      console.log(`[PreviewManager] Calling backend to stop preview for ${projectId}...`);
-      await fetch(`http://localhost:8000/sessions/${projectId}/preview/stop`, {
+      const backendUrl = process.env.BACKEND_API_URL || 'http://localhost:8000';
+      console.log(`[PreviewManager] Calling backend to stop preview for ${projectId} at ${backendUrl}...`);
+      await fetch(`${backendUrl}/sessions/${projectId}/preview/stop`, {
         method: 'POST'
       });
     } catch (e) {

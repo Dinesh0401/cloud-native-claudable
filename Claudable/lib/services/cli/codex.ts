@@ -520,8 +520,9 @@ async function executeCodex(
     requestId,
   });
 
+  const backendUrl = process.env.BACKEND_API_URL || 'http://localhost:8000';
   // 1. Create session (Docker container)
-  const sessionRes = await fetch('http://localhost:8000/sessions', {
+  const sessionRes = await fetch(`${backendUrl}/sessions`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ project_id: projectId }),
@@ -532,7 +533,7 @@ async function executeCodex(
   }
 
   // 2. Execute command inside container
-  const execRes = await fetch(`http://localhost:8000/sessions/${projectId}/exec`, {
+  const execRes = await fetch(`${backendUrl}/sessions/${projectId}/exec`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ prompt: promptWithContext }),
@@ -979,7 +980,8 @@ async function executeCodex(
     
     // 4. Cleanup session
     try {
-      await fetch(`http://localhost:8000/sessions/${projectId}`, { method: 'DELETE' });
+      const backendUrl = process.env.BACKEND_API_URL || 'http://localhost:8000';
+      await fetch(`${backendUrl}/sessions/${projectId}`, { method: 'DELETE' });
     } catch (cleanupError) {
       console.warn(`[CodexService] Failed to clean up session ${projectId}:`, cleanupError);
     }
