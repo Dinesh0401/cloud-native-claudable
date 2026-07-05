@@ -1,4 +1,4 @@
-# Cloud-Native Claudable 
+# Cloud-Native Claudable  
 
 Cloud-Native Claudable is a high-availability, multi-tenant AI developer workspace orchestration platform. It shifts local AI workstation code execution (which runs un-sandboxed on the host machine) into containerized sandboxes, separating **Compute** (ephemeral execution runtimes) from **Storage** (long-lived workspace state).
 
